@@ -4,6 +4,7 @@
 #include <string.h>
 #include <cstring>
 #include <stdexcept>
+#include <iostream>
 
 void ImuDataSource::open(bool enable) {
     if (-1 != fd_) {
@@ -25,6 +26,8 @@ void ImuDataSource::open(bool enable) {
 uint32_t ImuDataSource::read(std::vector<uint8_t>& buffer) {
     uint32_t result = 0u;
 
+    std::cout << "reading magnetometer\n";
+
     if (size_ < buffer.size()) {
         uint32_t n = size_ + read_(&buffer[size_], buffer.size() - size_);
         if (size_ < n) {
@@ -41,7 +44,6 @@ uint32_t ImuDataSource::read(std::vector<uint8_t>& buffer) {
                 size_ = n - end;
                 std::memcpy(&buffer_[0], &buffer[end], size_);
                 result = end;
-
             } else {   // no delimiter
                 if (buffer_.size() < n) {
                     buffer_.resize(n);

@@ -1,6 +1,7 @@
 #include "Camera.h"
 #include <sstream>
 
+
 std::string Camera::pipeline(uint8_t sensorId, uint32_t captureWidth, uint32_t captureHeight, uint32_t displayWidth, uint32_t displayHeight,
                              uint32_t frameRate, uint32_t flipMethod) {
     std::stringstream ss;

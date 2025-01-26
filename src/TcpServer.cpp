@@ -14,7 +14,7 @@ TcpServer::TcpServer(uint16_t port) : port_{port}, srvFd_{-1}, clientFd_{-1}, bu
         throw std::runtime_error("socket() failed"s);
     }
 
-    struct sockaddr_in sockAddrIn = {.sin_family = AF_INET, .sin_port = htons(port_), .sin_addr = {.s_addr = INADDR_ANY}};
+    struct sockaddr_in sockAddrIn = {.sin_family = AF_INET, .sin_port = htons(port_), .sin_addr = {.s_addr = INADDR_ANY}, .sin_zero = {}};
     if (0 != bind(srvFd_, (struct sockaddr *) &sockAddrIn, sizeof(sockAddrIn))) {
         throw std::runtime_error("bind() failed"s);
     }
@@ -36,10 +36,14 @@ void TcpServer::process() {
             n_ = 0u;
             size_ = 0u;
             for (auto &dataSource : dataSources_) {
-                size_ = dataSource.second.get().read(buffer_);
-                if (0u != size_) {
-                    break;
-                }
+                if(--dataSourcesCooldowns_[dataSource.first] == 0) {
+                    //std::cout << "data source ready\n";
+                    dataSourcesCooldowns_[dataSource.first] = dataSource.first;
+                    size_ = dataSource.second.get().read(buffer_);
+                    if (0u != size_) {
+                        break;
+                    }
+                }  
             }
         }
         if (n_ < size_) {
@@ -52,16 +56,25 @@ void TcpServer::process() {
 
         if (0 < select(clientFd_ + 1, &fdSetRd, &fdSetWr, nullptr, &tv)) {
             if (FD_ISSET(clientFd_, &fdSetRd)) {
-                char c;
-                if (0 >= recv(clientFd_, &c, sizeof(c), 0)) {
-                    close(clientFd_);
-                    clientFd_ = -1;
-
-                    for (auto &dataSource : dataSources_) {
-                        dataSource.second.get().open(false);
+                uint8_t msg[32];
+                ssize_t size = read(clientFd_, msg, std::extent<decltype(msg)>::value);
+                if (0 <= size) {
+                    bool handled = false;
+                    std::cout << "handling msg = " << msg << std::endl;
+                    for (auto &msgHandler : msgHandlers_) {
+                        handled = msgHandler.second.get().handle_msg(msg, std::extent<decltype(msg)>::value) || handled;
                     }
+                    if (!handled && size == 0) {
+                        // if not known message, then FIN
+                        close(clientFd_);
+                        clientFd_ = -1;
 
-                    std::cout << "close()" << std::endl;
+                        for (auto &dataSource : dataSources_) {
+                            dataSource.second.get().open(false);
+                        }
+
+                        std::cout << "close()" << std::endl;
+                    }
                 }
             } else if (FD_ISSET(clientFd_, &fdSetWr)) {
                 int result = send(clientFd_, &buffer_[n_], size_ - n_, MSG_NOSIGNAL);
